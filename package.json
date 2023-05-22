@@ -1,0 +1,23 @@
+{
+  "name": "ponggame",
+  "version": "1.0.0",
+  "description": "Multiplayer Pong Game using Socket.io",
+  "main": "index.js",
+  "scripts": {
+    "test": "test"
+  },
+  "keywords": [
+    "Socket.io",
+    "Pong",
+    "Multiplayer",
+    "Game"
+  ],
+  "author": "Samir Rodrigues",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.18.2",
+    "http": "^0.0.1-security",
+    "mime": "^3.0.0",
+    "socket.io": "^4.6.1"
+  }
+}
