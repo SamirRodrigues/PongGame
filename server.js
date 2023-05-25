@@ -68,7 +68,7 @@ io.on("connection", (socket) => {
   // Manipulador de eventos de movimento da raquete
   socket.on("move", (direction) => {
     const player = players[socket.id];   // Coleta o player especifico da lista de players
-    const speed = 5;                     // Quantidade de px que irá se deslocar por frame
+    const speed = 10;                     // Quantidade de px que irá se deslocar por frame
 
     // Move a raquete para cima ou para baixo
     if (direction === "up") {
@@ -122,7 +122,7 @@ function updateGameState() {
           ball.y <= player.y + player.height &&
           ball.y + 10 >= player.y
         ) {
-          ball.speedX *= -1;
+          ball.speedX *= -1.2;
         }
       } else {
         if (
@@ -130,7 +130,7 @@ function updateGameState() {
           ball.y <= player.y + player.height &&
           ball.y + 10 >= player.y
         ) {
-          ball.speedX *= -1;
+          ball.speedX *= -1.2;
         }
       }    
   }
