@@ -1,225 +1,143 @@
 const express = require("express");
-const http = require("http");
-const socketIO = require("socket.io");
-
 const app = express();
-const server = http.createServer(app);
-const io = socketIO(server);
+const server = require("http").Server(app);
+const io = require("socket.io")(server);
+const path = require('path');
+const { exec } = require('child_process');
 
-const PORT = 3000;
 
-const MAX_PLAYERS = 2;    // Número máximo de jogadores permitidos
-const MAX_SCORE = 5;      // Pontuação máxima para vencer o jogo
-
-// Variáveis do jogo
-let waitingPlayers = [];  // Sala de espera de jogadores
-let players = {};
-const ball = {
-  x: 400,
-  y: 300,
-  speedX: Math.random() > 0.5 ? 3 : -3,
-  speedY: Math.random() > 0.5 ? 3 : -3,
-};
-
-// Configuração do servidor
+// Roteamento do servidor
 app.use(express.static(__dirname + "/public"));
 
-// Inicia o servidor
-server.listen(PORT, () => {
-  console.log(`Servidor iniciado na porta ${PORT}`);
-});
+// Armazena os nomes das salas existentes
+const existingRooms = new Set();
 
-// Manipulador de eventos de conexão
+// Array para armazenar as salas criadas
+let rooms = [];
+
+// Envia informações das salas existentes para um novo cliente
+function sendExistingRooms(socket) {
+    socket.emit('existingRooms', rooms);
+  }
+
+// Lida com a conexão de um novo cliente
 io.on("connection", (socket) => {
-  console.log("Novo jogador conectado:", socket.id);
+console.log(`Novo cliente conectado: ${socket.id}`);
 
-  if (Object.keys(players).length >= MAX_PLAYERS) {                             // Se o número máximo de jogadores já foi alcançado, recusa a conexão do novo jogador
+// Envia informações das salas existentes para o novo cliente
+sendExistingRooms(socket);
 
-    console.log(
-      "Número máximo de jogadores alcançado. Conexão recusada:",
-      socket.id
-    );
-    socket.emit("gameFull", "O jogo está cheio. Tente novamente mais tarde.");  // TODO: Tela informando que o jogo está cheio
-    socket.disconnect(true);
-    return;
-  }
+
+const getUniquePort = () => {
+    // Gera um número de porta aleatório entre 3001 e 60000
+    const minPort = 3001;
+    const maxPort = 60000;
+    const port = Math.floor(Math.random() * (maxPort - minPort + 1)) + minPort;
   
-  waitingPlayers.push(socket); // Adiciona jogador à sala de espera
-
-  // Verifica se há dois jogadores na sala de espera para iniciar o jogo
-  if (waitingPlayers.length === 2) {
-    startGame(); //Inicia o Gameloop
-  }
-
-  // Adiciona novo jogador
-  players[socket.id] = {
-    id: socket.id,                                                  // Adiciona uma propriedade id única para cada jogador
-    x: Object.keys(players).length % 2 === 0 ? 10 : 780,            // Define o lado do jogador, posição inicial da raquete no eixo X
-    y: 250,                                                         // posição inicial da raquete no eixo Y
-    width: 10,                                                      // Largura
-    height: 60,                                                     // Altura
-    score: 0,                                                       // Pontuação
-    side: Object.keys(players).length % 2 === 0 ? "left" : "right", // Define o lado do jogador
+    // Verifica se o número de porta está em uso
+    return new Promise((resolve, reject) => {
+      const server = require('http').createServer();
+      server.listen(port, () => {
+        server.close(() => {
+          resolve(port);
+        });
+      });
+      server.on('error', (err) => {
+        if (err.code === 'EADDRINUSE') {
+          // Porta está em uso, tenta outra porta
+          resolve(getUniquePort().catch(reject));
+        } else {
+          reject(err);
+        }
+      });
+    });
   };
 
-  // Envia informações iniciais para o cliente da bola e da raquete
-  socket.emit("initialState", { players, ball });
 
-  // Manipulador de eventos de movimento da raquete
-  socket.on("move", (direction) => {
-    const player = players[socket.id];   // Coleta o player especifico da lista de players
-    const speed = 10;                     // Quantidade de px que irá se deslocar por frame
+// Cria uma nova sala
+socket.on('createRoom', async (roomName) => {    
 
-    // Move a raquete para cima ou para baixo
-    if (direction === "up") {
-      player.y -= speed;
-    } else if (direction === "down") {
-      player.y += speed;
-    }
+    if (rooms.some((room) => room.name === roomName)) {
+      console.log(`Sala já existe: ${roomName}`);
+      socket.emit('roomExists', roomName);
+    } else {        
+      
+      // Gera uma porta única para a sala
+      const port = await getUniquePort();
+      console.log(`PORT: ${port}`);
+      
 
-    // Limita o movimento da raquete dentro dos limites do campo
-    if (player.y < 0) {
-      player.y = 0;
-    } else if (player.y + player.height > 600) {
-      player.y = 600 - player.height;
+      socket.join(roomName);
+      
+      console.log(`Cliente criou a sala: ${roomName}`);
+
+      const newServer = exec(`node pongServer.js`, {
+        env: {
+          ROOM_NAME: roomName,
+          PORT: port
+        }
+      });
+      // Envia a URL da sala para o cliente
+      let roomURL = `http://localhost:${port}`;
+      console.log(roomURL)
+      const newRoom = { name: roomName, url: roomURL, clients: 1, port: port };
+      rooms.push(newRoom);
+      socket.emit('roomURL', roomURL);  
     }
   });
 
-  // Manipulador de eventos de desconexão
-  socket.on("disconnect", () => {
-    console.log("Jogador desconectado:", socket.id);
-    delete players[socket.id];
+// Envia as salas disponíveis para um novo cliente
+socket.on('getRooms', () => {
+    socket.emit('availableRooms', rooms);
+  });
 
-    // Remove jogador da sala de espera
-    const index = waitingPlayers.indexOf(socket);
-    if (index !== -1) {
-      waitingPlayers.splice(index, 1);
+  // Entra em uma sala existente
+  socket.on("joinRoom", (roomName) => {
+    if (io.sockets.adapter.rooms.has(roomName)) {
+      socket.join(roomName);
+      console.log(`Cliente entrou na sala: ${roomName}`);
+      io.to(roomName).emit("roomJoined", roomName);
+    } else {
+      console.log(`Sala inexistente: ${roomName}`);
+      socket.emit("roomNotExist", roomName);
+    }
+  });
+
+  socket.on("deleteRoomFromList", (room) =>{    
+    rooms = rooms.filter((r) => r.name !== room.name);
+  })
+
+  // Lida com a desconexão de um cliente
+  socket.on('disconnect', () => {
+    // Remove a sala da lista de salas existentes quando todos os clientes se desconectarem dela
+    const rooms = Object.keys(socket.rooms);
+    for (const room of rooms) {
+      if (room !== socket.id) {
+        const clientsInRoom = io.sockets.adapter.rooms.get(room);
+        if (!clientsInRoom || clientsInRoom.size === 0) {
+          existingRooms.delete(room);
+          console.log(`Sala removida: ${room}`);
+        }
+      }
     }
   });
 });
 
-// ==================== LÓGICA DO JOGO ==================== //
+// Inicia o servidor
+const port = 3000;
+server.listen(port, () => {
+  console.log(`Servidor iniciado na porta ${port}`);
+});
 
-// Função para atualizar o estado do jogo
-function updateGameState() {
-  // Movimenta a bola
-  ball.x += ball.speedX;
-  ball.y += ball.speedY;
+//ROTAS
 
-  // Colisão com as paredes
-  if (ball.y < 0 || ball.y > 590) {
-    ball.speedY *= -1;
-  }
-
-  // Colisão com as raquetes
-  for (const playerID in players) {
-     
-      const player = players[playerID];
-
-      if (player.side === "left") {
-        if (
-          ball.x <= player.x + player.width &&
-          ball.y <= player.y + player.height &&
-          ball.y + 10 >= player.y
-        ) {
-          ball.speedX *= -1.2;
-        }
-      } else {
-        if (
-          ball.x >= player.x - player.width &&
-          ball.y <= player.y + player.height &&
-          ball.y + 10 >= player.y
-        ) {
-          ball.speedX *= -1.2;
-        }
-      }    
-  }
-
-  // Verifica se a bola saiu do campo
-  if (ball.x < 0) {
-    // Ponto para o jogador da direita
-    Object.values(players).forEach((player) => {
-      if (player.side === "right") {
-        player.score++; 
-      }
-    });
-
-    resetBall();
-  } else if (ball.x > 800) {
-    // Ponto para o jogador da esquerda
-    Object.values(players).forEach((player) => {
-      if (player.side === "left") {
-        player.score++;
-      }
-    });
-
-    resetBall();
-  }
-}
-
-// Função para resetar a posição da bola
-function resetBall() {
-  ball.x = 400;
-  ball.y = 300;
-  ball.speedX = Math.random() > 0.5 ? 3 : -3;
-  ball.speedY = Math.random() > 0.5 ? 3 : -3;
-}
-
-// ==================== GAME OVER ==================== //
-
-// Função para resetar o jogo
-function resetGame() {
-  players = {};         // Reinicia os jogadores
-  resetBall();          // Reinicia a bola
-  waitingPlayers = [];  // Remove todos os jogadores da lista de espera
-
-  // Envia o estado inicial para os clientes
-  io.sockets.emit("initialState", { players, ball });
-
-  // Emite um evento de reinício do jogo
-  io.sockets.emit("restartGame");
-}
-
-// Função para verificar se há um vencedor
-function checkForWinner() {
-  const playerIDs = Object.keys(players);
-
-  for (const playerID of playerIDs) {
-    const player = players[playerID];
-
-    if (player.score >= MAX_SCORE) {
-      return player.side; // Retorna o jogador vencedor
+app.get('/:roomName', (req, res) => {
+    const roomName = req.params.roomName;
+  
+    // Verifica se a sala existe
+    if (rooms.some((room) => room.name === roomName)) {
+      res.sendFile(path.join(__dirname + '/pong'));
+    } else {
+      res.status(404).send('Sala não encontrada');
     }
-  }
-
-  return null; // Nenhum jogador atingiu a pontuação máxima ainda
-}
-
-function startGame() {
-  console.log("Iniciando jogo...");
-
-  // TODO: Cooldown ?
-
-  // intervalID = Toda função setInterval retorna um ID que pode ser armazenado e usado para dar clear posteriormente
-  // Nesse caso, armazeno para que após o termino do jogo, ou qualquer desconexão aconteça, o jogo seja parado automaticamente.
-
-  // Atualiza o estado do jogo em intervalos regulares
-  var intervalID = setInterval(() => {
-    if (Object.keys(players).length < MAX_PLAYERS) {
-      // Se um jogador for desconectado após o inicio do jogo
-      clearInterval(intervalID); // Para o update
-      resetGame(); // Reseta o jogo
-    }
-
-    updateGameState(); // Chame o Gameloop
-
-    io.sockets.emit("gameState", { players, ball }); // Atualiza todos os jogadores sobre o estado do jogo
-
-    const winner = checkForWinner();
-    if (winner) {
-      io.sockets.emit("gameOver", { winner });
-      resetGame();
-      clearInterval(intervalID); //Para o Update caso o jogo termine
-    }
-  }, 1000 / 60); //60FPS
-}
+  });

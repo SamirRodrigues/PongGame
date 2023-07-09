@@ -1,123 +1,89 @@
-const canvas = document.getElementById("gameCanvas");
-const context = canvas.getContext("2d");
 const socket = io();
 
-let showWinner = false;
-let winnerSide = "";
-
-let players = {};
-let ball = {};
-
-socket.on("initialState", (initialState) => {
-  players = initialState.players;
-  ball = initialState.ball;
-});
-
-socket.on("gameState", (gameState) => {
-  players = gameState.players;
-  ball = gameState.ball;
-});
-
-socket.on("gameOver", ({ winner }) => {
-  showWinner = true;    // Ativa a exibição da tela de vencedor
-  winnerSide = winner;  // Armazena o lado do jogador vencedor
-  showWinnerScreen();
-});
-
-socket.on("restartGame", () => {
-  // Reinicia o jogo
-  resetGame();
-});
-
-function draw() {
-  if (showWinner) {
-    showWinnerScreen();
-    return;
-  }
-
-  // Limpa o canvas
-  context.clearRect(0, 0, canvas.width, canvas.height);
-
-  // Desenha a bola
-  context.fillStyle = "white";
-  context.fillRect(ball.x, ball.y, 10, 10);
-
-  // Desenha a linha tracejada representando a rede
-  context.strokeStyle = "white";
-  context.setLineDash([5, 5]);                      // Define o padrão de linha tracejada (5 pixels desenhados, 5 pixels vazios)
-  context.beginPath();
-  context.moveTo(canvas.width / 2, 0);              // Começa na metade superior do canvas
-  context.lineTo(canvas.width / 2, canvas.height);  // Termina na metade inferior do canvas
-  context.stroke();
-  context.setLineDash([]);                          // Restaura o padrão de linha contínua
-
-  // Desenha as raquetes
-  for (const playerID in players) {
-    if (players.hasOwnProperty(playerID)) {
-      const player = players[playerID];
-
-      context.fillStyle = "white";
-      context.fillRect(player.x, player.y, player.width, player.height);
-
-      // Desenha a pontuação do jogador
-      if (player.side === "right") {
-        context.font = "20px Arial";
-        context.fillText(`Pontuação: ${player.score}`, 670, 20);
-      } else {
-        context.font = "20px Arial";
-        context.fillText(`Pontuação: ${player.score}`, 10, 20);
-      }
+    function createRoom() {
+        const roomName = document.getElementById('createRoomInput').value;
+        socket.emit('createRoom', roomName);
     }
+  
+    function joinRoom() {
+    const roomName = document.getElementById('joinRoomInput').value;
+    socket.emit('joinRoom', roomName);
+    }
+
+    socket.on('availableRooms', (availableRooms) => {
+    const roomList = document.getElementById('roomList');
+    roomList.innerHTML = '';
+    
+        availableRooms.forEach((room) => {
+            updateRoomList(room.name);
+        });
+    });
+
+    socket.on('roomURL', (url) => { 
+        
+        // Exibir tela de loading
+        showLoadingScreen();
+        
+        // Redirecionar para o novo servidor após um pequeno atraso
+        setTimeout(() => {            
+            window.location.href = url;
+        }, 4000); // Tempo de espera de 4 segundos (ajuste conforme necessário)
+      });
+
+    socket.on('roomCreated', (roomName) => {
+    console.log(`Sala criada: ${roomName}`);
+    updateRoomList(roomName);
+    });
+
+    socket.on('roomJoined', (roomName) => {
+    console.log(`Entrou na sala: ${roomName}`);
+    });
+
+    socket.on('roomExists', (roomName) => {
+    console.log(`Sala já existe: ${roomName}`);
+    alert(`A sala '${roomName}' já existe. Por favor, escolha outro nome.`);
+    });
+
+    socket.on('roomNotExist', (roomName) => {
+    console.log(`Sala inexistente: ${roomName}`);
+    alert(`A sala '${roomName}' não existe. Por favor, tente novamente.`);
+    });
+
+    // Recebe as informações das salas existentes
+    socket.on('existingRooms', (rooms) => {
+        displayRooms(rooms);
+    });
+
+    function updateRoomList(roomName) {
+    const roomList = document.getElementById('roomList');
+    const listItem = document.createElement('li');
+    listItem.textContent = roomName;
+    roomList.appendChild(listItem);
+    }
+
+    // Função para exibir as salas para o cliente
+    function displayRooms(rooms) {
+    // Limpa a lista de salas existentes
+    const roomsList = document.getElementById('roomList');
+    roomsList.innerHTML = '';
+  
+    // Cria os elementos HTML para exibir as salas
+    rooms.forEach((room) => {
+      const roomItem = document.createElement('li');
+      const roomLink = document.createElement('a');
+      roomLink.addEventListener('click', ()=>{
+        socket.emit('deleteRoomFromList', room);
+        window.location.href = room.url;
+      });
+      roomLink.textContent = room.name;
+      roomLink.classList.add('clickable-link');
+  
+      roomItem.appendChild(roomLink);
+      roomsList.appendChild(roomItem);
+    });
+  }  
+
+  function showLoadingScreen() {
+    const loadingScreen = document.getElementById('loadingScreen');
+    loadingScreen.style.display = 'block';
   }
-
-  requestAnimationFrame(draw);
-}
-
-draw();
-
-function showWinnerScreen() {
-  context.fillStyle = "black";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-
-  context.fillStyle = "white";
-  context.font = "40px Arial";
-  context.textAlign = "center";
-  context.fillText("Jogador Vencedor", canvas.width / 2, canvas.height / 2);
-  context.fillText(
-    `Lado do Jogador: ${winnerSide}`,
-    canvas.width / 2,
-    canvas.height / 2 + 40
-  );
-
-  // Exibe um botão para reiniciar o jogo
-  context.font = "20px Arial";
-  context.fillText(
-    "Aperte qualquer tecla para reiniciar",
-    canvas.width / 2,
-    canvas.height / 2 + 100
-  );
-}
-
-function resetGame() {
-  // Limpa o canvas
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  // Inicia a renderização novamente
-  draw();
-}
-
-document.addEventListener("keydown", (event) => {
-  if (showWinner) {
-    showWinner = false;         // Desativa a exibição da tela de vencedor
-    socket.emit("restartGame"); // Solicita o reinício do jogo ao servidor
-    location.reload();          // Recarrega a página
-  }
-});
-
-// Eventos de input do jogador
-document.addEventListener("keydown", (event) => {
-  if (event.key === "ArrowUp") {
-    socket.emit("move", "up");
-  } else if (event.key === "ArrowDown") {
-    socket.emit("move", "down");
-  }
-});

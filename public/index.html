@@ -1,26 +1,34 @@
 <!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Pong Multiplayer</title>
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-      }
+<html>
+<head>
+  <title>Matchmaking</title> 
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
 
-      canvas {
-        background-color: black;
-        display: block;
-        margin: 20px auto;
-      }
-    </style>
-  </head>
-  <body>
-    <canvas id="gameCanvas" width="800" height="600"></canvas>
+  <div class="container">
+    <div class="card">
+      <h1 class="title large">Matchmaking</h1>      
+      <div class="roomBar">
+        <h2>Criar Sala</h2>
+        <div class="list-bar">        
+          <input type="text" id="createRoomInput" placeholder="Nome da Sala">
+          <button onclick="createRoom()">Criar</button>    
+        </div>
+      </div>
+      <h2 class="title">Salas Disponíveis</h2>
+      <ul id="roomList"></ul>
+    </div>
+  </div>
 
-    <script src="/socket.io/socket.io.js"></script>
-    <script src="client.js"></script>
-  </body>
+ 
+
+  <!-- Estrutura básica da tela de loading -->
+<div id="loadingScreen">
+  <div class="loadingAnimation"></div>
+  <p>Carregando...</p>
+</div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="client.js"></script>
+</body>
 </html>
